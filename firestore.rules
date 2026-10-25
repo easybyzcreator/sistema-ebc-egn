@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Bloqueio padrão para qualquer coleção não especificada (Boas práticas de segurança)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==========================================
+    // REGRAS PARA A COLEÇÃO 'leads'
+    // ==========================================
+    match /leads/{leadId} {
+      allow read, write: if true;
+    }
+
+    // ==========================================
+    // REGRAS PARA A COLEÇÃO 'egn_repasses'
+    // ==========================================
+    match /egn_repasses/{repasseId} {
+      allow read, write: if true;
+    }
+
+    // ==========================================
+    // REGRAS PARA CONFIGURAÇÕES E TEMPLATES
+    // ==========================================
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /contract_templates/{templateId} {
+      allow read, write: if true;
+    }
+  }
+}

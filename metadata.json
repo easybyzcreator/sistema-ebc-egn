@@ -1,0 +1,8 @@
+{
+  "name": "SISTEMA EBC & EGN",
+  "description": "Sistema de Gestão de Leads, Clientes, Financeiro e Contratos para a parceria EBC e EGN.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
