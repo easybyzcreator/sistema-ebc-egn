@@ -1,0 +1,21 @@
+{
+  "name": "EBC & EGN",
+  "short_name": "EBC & EGN",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#424733",
+  "description": "Sistema de Gestão de Leads, Clientes, Financeiro e Contratos para a parceria EBC e EGN.",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/easybyzcreator/imagens/cc9cd8b27a2af203af3a01d7ce0bec8d8a0f0dd2/PWA%20SISTEMA.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://raw.githubusercontent.com/easybyzcreator/imagens/cc9cd8b27a2af203af3a01d7ce0bec8d8a0f0dd2/PWA%20SISTEMA.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

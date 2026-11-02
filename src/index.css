@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Custom Styled Scrollbars for rich, accessible visual indicators */
+::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9 !important; /* Default light track */
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #859159 !important; /* Warm olive accent color */
+  border-radius: 9999px;
+  border: 2px solid #f1f5f9 !important; /* Seamless spacing gap */
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a3b179 !important; /* Highlighted lighter olive on hover */
+}
+
+/* Dark mode elements scrollbars */
+.scrollbar-dark::-webkit-scrollbar-track {
+  background-color: #25281f !important;
+}
+
+.scrollbar-dark::-webkit-scrollbar-thumb {
+  background-color: #859159 !important;
+  border: 2px solid #25281f !important;
+}
+
+/* Light mode elements scrollbars */
+.scrollbar-light::-webkit-scrollbar-track {
+  background-color: #e2e8f0 !important;
+}
+
+.scrollbar-light::-webkit-scrollbar-thumb {
+  background-color: #859159 !important;
+  border: 2px solid #e2e8f0 !important;
+}
+
+/* Firefox support */
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: #859159 #f1f5f9 !important;
+}
