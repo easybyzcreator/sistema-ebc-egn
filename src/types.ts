@@ -70,6 +70,16 @@ export interface ContractData {
   clientBirthDate?: string;
 }
 
+export type BillingModel = "separate" | "combined_12";
+
+export interface StandardMessage {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ContractConfig {
   contratadaName: string;
   contratadaBrand: string;
@@ -85,6 +95,8 @@ export interface ContractConfig {
 
   serviceTitle: string;
   frequency: "MENSAL" | "ANUAL";
+  billingModel?: BillingModel;
+  combinedFirst12Amount?: number | "";
   installmentValue: number | "";
   monthlyFeeDueDay?: number;
   firstMonthlyDueDate?: string; // YYYY-MM-DD
@@ -144,6 +156,8 @@ export interface Lead {
   firebaseAppAccount?: string;     // Conta firebase app
   
   // Client details & Asaas Links
+  billingModel?: BillingModel;
+  combinedFirst12Amount?: number;
   configurationFee?: number;
   configurationFeePaid?: boolean;
   monthlyFee?: number;

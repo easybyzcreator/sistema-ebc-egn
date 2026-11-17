@@ -199,18 +199,31 @@ export default function UnifiedClientsTab({
         slug = `${clean}-${uniqueSuffix}`;
       }
 
+      const effectiveBillingModel = config.billingModel || "separate";
+      const parsedCombined = config.combinedFirst12Amount !== "" && config.combinedFirst12Amount !== undefined
+        ? Number(config.combinedFirst12Amount)
+        : (configuringClient.combinedFirst12Amount || 0);
+      const effectiveConfigFee = effectiveBillingModel === "combined_12" && parsedCombined > 0
+        ? Math.round(parsedCombined * 12 * 100) / 100
+        : (config.setupFee !== "" ? Number(config.setupFee) : configuringClient.configurationFee);
+      const effectiveSetupInst = effectiveBillingModel === "combined_12"
+        ? 12
+        : (config.setupInstallments || configuringClient.setupInstallments || 1);
+
       const clientRef = doc(db, "leads", configuringClient.id);
       await updateDoc(clientRef, {
         contractConfig: config,
         contractSlug: slug,
         contractStatus: configuringClient.contractStatus || "pending",
+        billingModel: effectiveBillingModel,
+        combinedFirst12Amount: effectiveBillingModel === "combined_12" ? parsedCombined : 0,
         monthlyFee: config.installmentValue !== "" ? Number(config.installmentValue) : configuringClient.monthlyFee,
-        configurationFee: config.setupFee !== "" ? Number(config.setupFee) : configuringClient.configurationFee,
+        configurationFee: effectiveConfigFee,
         firstMonthlyDueDate: config.firstMonthlyDueDate || "",
         monthlyDueDateOption: config.monthlyDueDateOption || "signing_date",
         setupDueDate: config.setupDueDate || "",
         setupDueDateOption: config.setupDueDateOption || "signing_date",
-        setupInstallments: config.setupInstallments || configuringClient.setupInstallments || 1,
+        setupInstallments: effectiveSetupInst,
         updatedAt: new Date().toISOString()
       });
 
@@ -219,13 +232,15 @@ export default function UnifiedClientsTab({
         contractConfig: config,
         contractSlug: slug,
         contractStatus: configuringClient.contractStatus || "pending",
+        billingModel: effectiveBillingModel,
+        combinedFirst12Amount: effectiveBillingModel === "combined_12" ? parsedCombined : 0,
         monthlyFee: config.installmentValue !== "" ? Number(config.installmentValue) : configuringClient.monthlyFee,
-        configurationFee: config.setupFee !== "" ? Number(config.setupFee) : configuringClient.configurationFee,
+        configurationFee: effectiveConfigFee,
         firstMonthlyDueDate: config.firstMonthlyDueDate || "",
         monthlyDueDateOption: config.monthlyDueDateOption || "signing_date",
         setupDueDate: config.setupDueDate || "",
         setupDueDateOption: config.setupDueDateOption || "signing_date",
-        setupInstallments: config.setupInstallments || configuringClient.setupInstallments || 1,
+        setupInstallments: effectiveSetupInst,
       };
 
       const generatedUrl = `${window.location.origin}/?contract=${slug}`;
@@ -513,14 +528,27 @@ export default function UnifiedClientsTab({
                       {/* Contract & Setup Values */}
                       <td className="px-5 py-4">
                         <div className="space-y-0.5 font-mono text-xs">
-                          <p className="font-extrabold text-[#424733]">
-                            Mensal: {client.monthlyFee ? `R$ ${client.monthlyFee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "Não definido"}
-                          </p>
-                          {client.configurationFee ? (
-                            <p className="text-[10px] text-slate-500">
-                              Setup: R$ {client.configurationFee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                            </p>
-                          ) : null}
+                          {client.billingModel === "combined_12" ? (
+                            <>
+                              <p className="font-extrabold text-[#424733]">
+                                12x Combinadas: {client.combinedFirst12Amount ? `R$ ${client.combinedFirst12Amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "Não definido"}
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                Mensal (13ª+): {client.monthlyFee ? `R$ ${client.monthlyFee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "Não definido"}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-extrabold text-[#424733]">
+                                Mensal: {client.monthlyFee ? `R$ ${client.monthlyFee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "Não definido"}
+                              </p>
+                              {client.configurationFee ? (
+                                <p className="text-[10px] text-slate-500">
+                                  Setup: R$ {client.configurationFee.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                                </p>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       </td>
 

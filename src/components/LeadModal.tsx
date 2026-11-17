@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { doc, updateDoc, deleteDoc, collection, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { Lead, HistoryItem, Payment } from "../types";
+import { Lead, HistoryItem, Payment, BillingModel } from "../types";
 import { X, Calendar, Plus, Trash2, ArrowRightLeft, Landmark, MessageSquare, Mail, Phone, Building, ShieldAlert, Link as LinkIcon, Copy, ExternalLink, Check, Clock, CheckCircle2 } from "lucide-react";
 import { calcEgnCommissionSetup, calcEgnCommissionSingle, formatPhoneBR } from "../lib/masks";
 
@@ -81,6 +81,12 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
   };
 
   // Conversion states preloaded with lead values if present
+  const [billingModel, setBillingModel] = useState<BillingModel>(lead.billingModel || "separate");
+  const [combinedFirst12Input, setCombinedFirst12Input] = useState<string>(
+    lead.combinedFirst12Amount !== undefined && lead.combinedFirst12Amount !== null && lead.combinedFirst12Amount > 0
+      ? lead.combinedFirst12Amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : ""
+  );
   const [configFeeInput, setConfigFeeInput] = useState<string>(
     lead.configurationFee !== undefined && lead.configurationFee !== null && lead.configurationFee > 0
       ? lead.configurationFee.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -134,7 +140,11 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
     if (isReadOnly) return;
     if (!name.trim()) return;
 
-    const parsedConfigFee = parseCurrency(configFeeInput);
+    const parsedCombinedFirst12 = parseCurrency(combinedFirst12Input);
+    const parsedConfigFee = billingModel === "combined_12"
+      ? Math.round(parsedCombinedFirst12 * 12 * 100) / 100
+      : parseCurrency(configFeeInput);
+    const effectiveInstallments = billingModel === "combined_12" ? 12 : setupInstallments;
     const parsedMonthlyFee = parseCurrency(monthlyFeeInput);
 
     try {
@@ -143,9 +153,23 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
       const newItem: HistoryItem = {
         id: Math.random().toString(36).substr(2, 9),
         date: new Date().toISOString(),
-        text: `Dados do contato atualizados: Nome=${name}, Email=${email}, Tel=${phone}, Empresa=${company}, Setup=R$ ${parsedConfigFee.toFixed(2)} (${setupInstallments}x), Mensalidade=R$ ${parsedMonthlyFee.toFixed(2)}`,
+        text: billingModel === "combined_12"
+          ? `Dados do contato atualizados: Nome=${name}, Email=${email}, Tel=${phone}, Empresa=${company}, Modelo=12x Combinadas (R$ ${parsedCombinedFirst12.toFixed(2)}/mês nos 12 primeiros meses), Mensalidade após 13ª=R$ ${parsedMonthlyFee.toFixed(2)}`
+          : `Dados do contato atualizados: Nome=${name}, Email=${email}, Tel=${phone}, Empresa=${company}, Setup=R$ ${parsedConfigFee.toFixed(2)} (${effectiveInstallments}x), Mensalidade=R$ ${parsedMonthlyFee.toFixed(2)}`,
         type: "note"
       };
+
+      const syncedContractConfig = lead.contractConfig
+        ? {
+            ...lead.contractConfig,
+            billingModel,
+            combinedFirst12Amount: billingModel === "combined_12" ? parsedCombinedFirst12 : (lead.contractConfig.combinedFirst12Amount ?? ""),
+            setupFee: parsedConfigFee,
+            setupInstallments: effectiveInstallments,
+            installmentValue: parsedMonthlyFee,
+            totalAnnualValue: billingModel === "combined_12" ? parsedCombinedFirst12 * 12 : parsedMonthlyFee * 12
+          }
+        : undefined;
 
       if (!lead.id) {
         await addDoc(collection(db, "leads"), {
@@ -158,10 +182,12 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
           googleStudioAppAccount: googleStudioAppAccount.trim(),
           firebaseAppAccount: firebaseAppAccount.trim(),
           status: lead.status || "new",
+          billingModel,
+          combinedFirst12Amount: billingModel === "combined_12" ? parsedCombinedFirst12 : 0,
           configurationFee: parsedConfigFee,
           monthlyFee: parsedMonthlyFee,
           monthlyFeeDueDay: Number(monthlyFeeDueDay),
-          setupInstallments: setupInstallments,
+          setupInstallments: effectiveInstallments,
           setupPaymentLink: setupPaymentLink.trim(),
           setupPaymentStatus: setupPaymentStatus,
           configurationFeePaid: setupPaymentStatus === "paid",
@@ -177,7 +203,7 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
       }
 
       const leadRef = doc(db, "leads", lead.id);
-      await updateDoc(leadRef, {
+      const updatePayload: any = {
         name,
         email,
         phone,
@@ -186,10 +212,12 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
         site,
         googleStudioAppAccount: googleStudioAppAccount.trim(),
         firebaseAppAccount: firebaseAppAccount.trim(),
+        billingModel,
+        combinedFirst12Amount: billingModel === "combined_12" ? parsedCombinedFirst12 : 0,
         configurationFee: parsedConfigFee,
         monthlyFee: parsedMonthlyFee,
         monthlyFeeDueDay: Number(monthlyFeeDueDay),
-        setupInstallments: setupInstallments,
+        setupInstallments: effectiveInstallments,
         setupPaymentLink: setupPaymentLink.trim(),
         setupPaymentStatus: setupPaymentStatus,
         configurationFeePaid: setupPaymentStatus === "paid",
@@ -197,7 +225,12 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
         monthlyPaymentStatus: monthlyPaymentStatus,
         history: [...(lead.history || []), newItem],
         updatedAt: new Date().toISOString()
-      });
+      };
+      if (syncedContractConfig) {
+        updatePayload.contractConfig = syncedContractConfig;
+      }
+
+      await updateDoc(leadRef, updatePayload);
 
       // Local mutations
       lead.name = name;
@@ -208,15 +241,20 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
       lead.site = site;
       lead.googleStudioAppAccount = googleStudioAppAccount.trim();
       lead.firebaseAppAccount = firebaseAppAccount.trim();
+      lead.billingModel = billingModel;
+      lead.combinedFirst12Amount = billingModel === "combined_12" ? parsedCombinedFirst12 : 0;
       lead.configurationFee = parsedConfigFee;
       lead.monthlyFee = parsedMonthlyFee;
       lead.monthlyFeeDueDay = Number(monthlyFeeDueDay);
-      lead.setupInstallments = setupInstallments;
+      lead.setupInstallments = effectiveInstallments;
       lead.setupPaymentLink = setupPaymentLink.trim();
       lead.setupPaymentStatus = setupPaymentStatus;
       lead.configurationFeePaid = setupPaymentStatus === "paid";
       lead.monthlyPaymentLink = monthlyPaymentLink.trim();
       lead.monthlyPaymentStatus = monthlyPaymentStatus;
+      if (syncedContractConfig) {
+        lead.contractConfig = syncedContractConfig;
+      }
       lead.history.push(newItem);
 
       alert("Cadastro e condições financeiras atualizados com sucesso!");
@@ -711,66 +749,160 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
               </div>
 
               <div className="pt-4 border-t border-slate-100 space-y-4">
-                <span className="block text-xs font-black text-[#424733] uppercase tracking-wider">Condições Financeiras do Cliente</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-500 uppercase">Taxa de Setup (R$)</label>
-                    <input
-                      type="text"
-                      value={configFeeInput}
-                      onChange={(e) => setConfigFeeInput(formatCurrencyInput(e.target.value))}
-                      placeholder="0,00"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#424733] focus:ring-2 focus:ring-[#859159]/40"
-                    />
-                    {(() => {
-                      const comm = calcEgnCommissionSetup(parseCurrency(configFeeInput), setupInstallments);
-                      return (
-                        <span className="text-xs text-slate-500 block font-bold" title="10% calculado após abater taxas bancárias (R$ 1,99 boleto + R$ 0,99 mensagem por parcela)">
-                          EGN 10% (Líq. taxas):{" "}
-                          <span className="text-[#859159]">
-                            {comm.installments > 1 
-                              ? `${comm.installments}x R$ ${comm.commissionPerInstallment.toFixed(2)}`
-                              : `R$ ${comm.totalCommission.toFixed(2)}`}
-                          </span>
-                        </span>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-500 uppercase">Parcelas Setup</label>
-                    <select
-                      value={setupInstallments}
-                      onChange={(e) => setSetupInstallments(parseInt(e.target.value))}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#859159]/40 text-[#424733]"
-                    >
-                      <option value={1}>À Vista (1x)</option>
-                      <option value={2}>2x Sem Juros</option>
-                      <option value={3}>3x Sem Juros</option>
-                      <option value={4}>4x Sem Juros</option>
-                      <option value={5}>5x Sem Juros</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-500 uppercase">Mensalidade (R$)</label>
-                    <input
-                      type="text"
-                      value={monthlyFeeInput}
-                      onChange={(e) => setMonthlyFeeInput(formatCurrencyInput(e.target.value))}
-                      placeholder="0,00"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#424733] focus:ring-2 focus:ring-[#859159]/40"
-                    />
-                    {(() => {
-                      const comm = calcEgnCommissionSingle(parseCurrency(monthlyFeeInput));
-                      return (
-                        <span className="text-xs text-slate-500 block font-bold" title="10% calculado após abater taxas bancárias (R$ 1,99 boleto + R$ 0,99 mensagem)">
-                          EGN 10% (Líq. taxas): <span className="text-[#859159]">R$ {comm.toFixed(2)}/mês</span>
-                        </span>
-                      );
-                    })()}
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="block text-xs font-black text-[#424733] uppercase tracking-wider">Condições Financeiras do Cliente</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Contrato Anual (12 meses)</span>
                 </div>
+
+                {/* Seletor de Formato de Cobrança */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-slate-50 p-2 rounded-2xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setBillingModel("separate")}
+                    className={`text-left px-3.5 py-2.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                      billingModel === "separate"
+                        ? "bg-[#424733] text-white border-[#424733] shadow-xs"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span className="block uppercase tracking-wide">Setup + Mensalidade Separados</span>
+                    <span className={`block text-[10px] font-medium mt-0.5 ${billingModel === "separate" ? "text-slate-200" : "text-slate-400"}`}>
+                      Formato tradicional (Setup 1x–10x + Mensalidade)
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBillingModel("combined_12")}
+                    className={`text-left px-3.5 py-2.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                      billingModel === "combined_12"
+                        ? "bg-[#424733] text-white border-[#424733] shadow-xs"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span className="block uppercase tracking-wide">12 Parcelas Combinadas (Conf. + Mensal)</span>
+                    <span className={`block text-[10px] font-medium mt-0.5 ${billingModel === "combined_12" ? "text-slate-200" : "text-slate-400"}`}>
+                      12 primeiras juntas + só mensalidade da 13ª em diante
+                    </span>
+                  </button>
+                </div>
+
+                {billingModel === "separate" ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-500 uppercase">Taxa de Setup (R$)</label>
+                      <input
+                        type="text"
+                        value={configFeeInput}
+                        onChange={(e) => setConfigFeeInput(formatCurrencyInput(e.target.value))}
+                        placeholder="0,00"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#424733] focus:ring-2 focus:ring-[#859159]/40"
+                      />
+                      {(() => {
+                        const comm = calcEgnCommissionSetup(parseCurrency(configFeeInput), setupInstallments);
+                        return (
+                          <span className="text-xs text-slate-500 block font-bold" title="10% calculado após abater taxas bancárias (R$ 1,99 boleto + R$ 0,99 mensagem por parcela)">
+                            EGN 10% (Líq. taxas):{" "}
+                            <span className="text-[#859159]">
+                              {comm.installments > 1 
+                                ? `${comm.installments}x R$ ${comm.commissionPerInstallment.toFixed(2)}`
+                                : `R$ ${comm.totalCommission.toFixed(2)}`}
+                            </span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-500 uppercase">Parcelas Setup</label>
+                      <select
+                        value={setupInstallments}
+                        onChange={(e) => setSetupInstallments(parseInt(e.target.value))}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#859159]/40 text-[#424733]"
+                      >
+                        <option value={1}>À Vista (1x)</option>
+                        <option value={2}>2x Sem Juros</option>
+                        <option value={3}>3x Sem Juros</option>
+                        <option value={4}>4x Sem Juros</option>
+                        <option value={5}>5x Sem Juros</option>
+                        <option value={6}>6x Sem Juros</option>
+                        <option value={7}>7x Sem Juros</option>
+                        <option value={8}>8x Sem Juros</option>
+                        <option value={9}>9x Sem Juros</option>
+                        <option value={10}>10x Sem Juros</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-500 uppercase">Mensalidade (R$)</label>
+                      <input
+                        type="text"
+                        value={monthlyFeeInput}
+                        onChange={(e) => setMonthlyFeeInput(formatCurrencyInput(e.target.value))}
+                        placeholder="0,00"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-[#424733] focus:ring-2 focus:ring-[#859159]/40"
+                      />
+                      {(() => {
+                        const comm = calcEgnCommissionSingle(parseCurrency(monthlyFeeInput));
+                        return (
+                          <span className="text-xs text-slate-500 block font-bold" title="10% calculado após abater taxas bancárias (R$ 1,99 boleto + R$ 0,99 mensagem)">
+                            EGN 10% (Líq. taxas): <span className="text-[#859159]">R$ {comm.toFixed(2)}/mês</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#859159]/5 p-4 rounded-2xl border border-[#859159]/25">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black text-[#424733] uppercase">
+                        12 Primeiras Parcelas (Conf. + Mensalidade) (R$)
+                      </label>
+                      <input
+                        type="text"
+                        value={combinedFirst12Input}
+                        onChange={(e) => setCombinedFirst12Input(formatCurrencyInput(e.target.value))}
+                        placeholder="0,00"
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#424733] focus:ring-2 focus:ring-[#859159]/40"
+                      />
+                      {(() => {
+                        const val = parseCurrency(combinedFirst12Input);
+                        const comm = calcEgnCommissionSingle(val);
+                        return (
+                          <div className="space-y-0.5">
+                            <span className="text-[11px] text-slate-600 block font-bold">
+                              Total 1º Ano (12x): <span className="text-[#424733]">R$ {(val * 12).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </span>
+                            <span className="text-xs text-slate-500 block font-bold">
+                              EGN 10% (1ª a 12ª): <span className="text-[#859159]">12x R$ {comm.toFixed(2)}</span>
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black text-[#424733] uppercase">
+                        Mensalidade (Da 13ª Parcela em Diante) (R$)
+                      </label>
+                      <input
+                        type="text"
+                        value={monthlyFeeInput}
+                        onChange={(e) => setMonthlyFeeInput(formatCurrencyInput(e.target.value))}
+                        placeholder="0,00"
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-[#424733] focus:ring-2 focus:ring-[#859159]/40"
+                      />
+                      {(() => {
+                        const comm = calcEgnCommissionSingle(parseCurrency(monthlyFeeInput));
+                        return (
+                          <span className="text-xs text-slate-500 block font-bold">
+                            EGN 10% (13ª+): <span className="text-[#859159]">R$ {comm.toFixed(2)}/mês</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
 
                 {/* SESSÃO DE LINKS MANUAIS DO ASAAS */}
                 <div className="pt-4 border-t border-slate-100 space-y-4">
@@ -783,25 +915,27 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
                     </span>
                   </div>
 
-                  {/* 1. LINK DE TAXA DE SETUP */}
+                  {/* 1. LINK DE TAXA DE SETUP OU 12 PRIMEIRAS PARCELAS */}
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-1">
                       <label className="block text-xs font-black text-[#424733] uppercase">
-                        1. Link da Taxa de Setup / Configuração (Asaas)
+                        {billingModel === "combined_12"
+                          ? "1. Link das 12 Primeiras Parcelas (Conf. + Mensalidade - Asaas)"
+                          : "1. Link da Taxa de Setup / Configuração (Asaas)"}
                       </label>
                       
                       {/* STATUS AUTOMATIZADO (NÃO MANUAL) */}
                       {setupPaymentStatus === "paid" ? (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          <CheckCircle2 size={13} /> Setup: Pago (100%)
+                          <CheckCircle2 size={13} /> {billingModel === "combined_12" ? "12 Parcelas: Pagas (100%)" : "Setup: Pago (100%)"}
                         </span>
                       ) : setupPaymentStatus === "partial" ? (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
-                          <Clock size={13} /> Setup: Pago Parcial
+                          <Clock size={13} /> {billingModel === "combined_12" ? "12 Parcelas: Em Andamento" : "Setup: Pago Parcial"}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-200">
-                          <Clock size={13} /> Setup: Pendente
+                          <Clock size={13} /> {billingModel === "combined_12" ? "12 Parcelas: Pendente" : "Setup: Pendente"}
                         </span>
                       )}
                     </div>
@@ -840,13 +974,17 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
                     {/* DADOS DO LINK: VALOR, PARCELAS E VENCIMENTO */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs bg-white p-3 rounded-xl border border-slate-200/80">
                       <div>
-                        <span className="text-slate-400 block text-[10px] font-black uppercase">Valor da Taxa</span>
+                        <span className="text-slate-400 block text-[10px] font-black uppercase">
+                          {billingModel === "combined_12" ? "Valor das 12 Primeiras Parcelas" : "Valor da Taxa"}
+                        </span>
                         <span className="font-black text-sm text-[#424733]">
-                          R$ {configFeeInput || "0,00"} {setupInstallments > 1 ? `(em até ${setupInstallments}x de R$ ${(parseCurrency(configFeeInput) / setupInstallments).toFixed(2).replace(".", ",")})` : "(À Vista)"}
+                          {billingModel === "combined_12"
+                            ? `12x de R$ ${combinedFirst12Input || "0,00"} (Total: R$ ${(parseCurrency(combinedFirst12Input) * 12).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                            : `R$ ${configFeeInput || "0,00"} ${setupInstallments > 1 ? `(em até ${setupInstallments}x de R$ ${(parseCurrency(configFeeInput) / setupInstallments).toFixed(2).replace(".", ",")})` : "(À Vista)"}`}
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-400 block text-[10px] font-black uppercase">Vencimento do Setup</span>
+                        <span className="text-slate-400 block text-[10px] font-black uppercase">Vencimento</span>
                         <span className="font-black text-sm text-[#424733]">
                           No ato da adesão / 1º vencimento
                         </span>
@@ -858,7 +996,9 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
                     <div className="flex items-center justify-between flex-wrap gap-1">
                       <label className="block text-xs font-black text-[#424733] uppercase">
-                        2. Link da Mensalidade Recorrente / Assinatura (Asaas)
+                        {billingModel === "combined_12"
+                          ? "2. Link da Mensalidade Recorrente (A partir da 13ª parcela - Asaas)"
+                          : "2. Link da Mensalidade Recorrente / Assinatura (Asaas)"}
                       </label>
                       
                       {/* STATUS AUTOMATIZADO (NÃO MANUAL) */}
@@ -982,6 +1122,11 @@ export default function LeadModal({ lead, onClose, isReadOnly, initialTab }: Lea
                   <option value={3}>3x Sem Juros</option>
                   <option value={4}>4x Sem Juros</option>
                   <option value={5}>5x Sem Juros</option>
+                  <option value={6}>6x Sem Juros</option>
+                  <option value={7}>7x Sem Juros</option>
+                  <option value={8}>8x Sem Juros</option>
+                  <option value={9}>9x Sem Juros</option>
+                  <option value={10}>10x Sem Juros</option>
                 </select>
                 {setupInstallments > 1 && configFeeInput && (
                   <span className="text-xs text-[#859159] block font-bold italic">

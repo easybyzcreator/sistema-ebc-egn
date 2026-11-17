@@ -3442,7 +3442,7 @@ export default function ClientFinanceTab({ leads, isReadOnly }: ClientFinanceTab
                             <div className="flex items-center gap-2">
                               <span className="font-extrabold text-xs text-[#424733] uppercase">
                                 {p.type === "configuration" 
-                                  ? `Taxa de Setup • Parcela ${p.installmentNumber || idx + 1} de ${p.totalInstallments || modalOverview.setupTotalInstallments}` 
+                                  ? `${selectedClient.billingModel === "combined_12" ? "12 Primeiras (Conf. + Mensal)" : "Taxa de Setup"} • Parcela ${p.installmentNumber || idx + 1} de ${p.totalInstallments || modalOverview.setupTotalInstallments}` 
                                   : `Mensalidade ${p.monthReference ? `(Ref: ${p.monthReference})` : `Parcela #${idx + 1}`}`}
                               </span>
                               <span className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase ${

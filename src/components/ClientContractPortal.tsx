@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { collection, query, where, getDocs, updateDoc, doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { Lead, HistoryItem, ContractConfig } from "../types";
-import { getDefaultContractConfig, formatClause3 } from "../lib/contractDefaults";
+import { getDefaultContractConfig, formatClause3, OLD_CLAUSE_4_BODY, NEW_CLAUSE_4_BODY } from "../lib/contractDefaults";
 import { printContract } from "../lib/printContract";
 import { formatCpfCnpj, formatDateBRInput, formatPhoneBR } from "../lib/masks";
 import { 
@@ -215,6 +215,10 @@ export default function ClientContractPortal({ slug, onBackToAdmin }: ClientCont
             "em até 10 (dez) dias úteis."
           );
         }
+        if (leadData.contractStatus !== "signed" && (!config.clause4Body || config.clause4Body.trim() === OLD_CLAUSE_4_BODY)) {
+          config.clause4Title = "CLÁUSULA 4 – POLÍTICA DE CANCELAMENTO, ARREPENDIMENTO E VIGÊNCIA ANUAL";
+          config.clause4Body = NEW_CLAUSE_4_BODY;
+        }
         setContractConfig(config);
 
         // Prepopulate form if lead already had basic info
@@ -421,6 +425,8 @@ export default function ClientContractPortal({ slug, onBackToAdmin }: ClientCont
 
   const formattedClause3 = formatClause3(contractConfig.clause3Body, {
     frequency: contractConfig.frequency,
+    billingModel: lead.billingModel || contractConfig.billingModel || "separate",
+    combinedFirst12Amount: lead.combinedFirst12Amount ?? contractConfig.combinedFirst12Amount,
     installmentValue: contractConfig.installmentValue,
     setupFee: contractConfig.setupFee,
     totalAnnualValue: contractConfig.totalAnnualValue,
@@ -583,7 +589,7 @@ export default function ClientContractPortal({ slug, onBackToAdmin }: ClientCont
               {contractConfig.clause4Body && (
                 <div className="space-y-1">
                   <h4 className="font-bold text-[#424733] uppercase">{contractConfig.clause4Title}</h4>
-                  <p>{contractConfig.clause4Body}</p>
+                  <p className="whitespace-pre-line">{contractConfig.clause4Body}</p>
                 </div>
               )}
 

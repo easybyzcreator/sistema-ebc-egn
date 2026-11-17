@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Lead, ContractConfig } from "../types";
-import { getDefaultContractConfig, formatClause3 } from "../lib/contractDefaults";
+import { Lead, ContractConfig, BillingModel } from "../types";
+import { getDefaultContractConfig, formatClause3, OLD_CLAUSE_4_BODY, NEW_CLAUSE_4_BODY } from "../lib/contractDefaults";
 import DatePickerBR from "./DatePickerBR";
 import { 
   X, 
@@ -34,6 +34,12 @@ interface ContractConfiguratorProps {
 export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly = false }: ContractConfiguratorProps) {
   const [config, setConfig] = useState<ContractConfig>(() => {
     const initial = lead.contractConfig ? { ...lead.contractConfig } : getDefaultContractConfig(lead);
+    if (!initial.billingModel && lead.billingModel) {
+      initial.billingModel = lead.billingModel;
+    }
+    if ((initial.combinedFirst12Amount === undefined || initial.combinedFirst12Amount === "") && lead.combinedFirst12Amount) {
+      initial.combinedFirst12Amount = lead.combinedFirst12Amount;
+    }
     if (initial.activationInstructions && initial.activationInstructions.includes("é de até 7 dias úteis, contados a partir da data de confirmação")) {
       initial.activationInstructions = initial.activationInstructions.replace(
         "é de até 7 dias úteis, contados a partir da data de confirmação",
@@ -45,6 +51,10 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
         "em até 7 (sete) dias úteis.",
         "em até 10 (dez) dias úteis."
       );
+    }
+    if (lead.contractStatus !== "signed" && (!initial.clause4Body || initial.clause4Body.trim() === OLD_CLAUSE_4_BODY)) {
+      initial.clause4Title = "CLÁUSULA 4 – POLÍTICA DE CANCELAMENTO, ARREPENDIMENTO E VIGÊNCIA ANUAL";
+      initial.clause4Body = NEW_CLAUSE_4_BODY;
     }
     return initial;
   });
@@ -65,6 +75,12 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
     return String(initialVal).replace(".", ",");
   });
 
+  const [combinedFirst12Input, setCombinedFirst12Input] = useState<string>(() => {
+    const initialVal = lead.contractConfig?.combinedFirst12Amount ?? lead.combinedFirst12Amount ?? "";
+    if (initialVal === "") return "";
+    return String(initialVal).replace(".", ",");
+  });
+
   // Keep client information updated if it changes in lead prop
   useEffect(() => {
     if (!lead.contractConfig) {
@@ -72,6 +88,7 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
       setConfig(defaultConf);
       setInstallmentInput(defaultConf.installmentValue === "" ? "" : String(defaultConf.installmentValue).replace(".", ","));
       setSetupFeeInput(defaultConf.setupFee === "" ? "" : String(defaultConf.setupFee).replace(".", ","));
+      setCombinedFirst12Input(defaultConf.combinedFirst12Amount === "" || defaultConf.combinedFirst12Amount === undefined ? "" : String(defaultConf.combinedFirst12Amount).replace(".", ","));
     }
   }, [lead]);
 
@@ -103,6 +120,41 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
     const numericVal = isNaN(parsed) ? "" : parsed;
     
     handleChange("setupFee", numericVal);
+  };
+
+  const handleCombinedFirst12InputChange = (val: string) => {
+    setCombinedFirst12Input(val);
+    const clean = val.replace(/\./g, "").replace(",", ".");
+    const parsed = parseFloat(clean);
+    const numericVal = isNaN(parsed) ? "" : parsed;
+
+    setConfig(prev => ({
+      ...prev,
+      combinedFirst12Amount: numericVal,
+      setupFee: numericVal !== "" ? Math.round(numericVal * 12 * 100) / 100 : "",
+      setupInstallments: 12,
+      totalAnnualValue: numericVal !== "" ? Math.round(numericVal * 12 * 100) / 100 : prev.totalAnnualValue
+    }));
+  };
+
+  const handleBillingModelChange = (model: BillingModel) => {
+    setConfig(prev => {
+      if (model === "combined_12") {
+        const combNum = prev.combinedFirst12Amount !== "" && prev.combinedFirst12Amount !== undefined ? Number(prev.combinedFirst12Amount) : 0;
+        return {
+          ...prev,
+          billingModel: "combined_12",
+          setupInstallments: 12,
+          setupFee: combNum > 0 ? Math.round(combNum * 12 * 100) / 100 : prev.setupFee,
+          totalAnnualValue: combNum > 0 ? Math.round(combNum * 12 * 100) / 100 : prev.totalAnnualValue
+        };
+      }
+      return {
+        ...prev,
+        billingModel: "separate",
+        setupInstallments: prev.setupInstallments === 12 ? 1 : (prev.setupInstallments || 1)
+      };
+    });
   };
 
   const handleAddAdditionalClause = () => {
@@ -165,6 +217,8 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
   // Live formatted clause 3 rendering helper
   const formattedClause3Text = formatClause3(config.clause3Body, {
     frequency: config.frequency,
+    billingModel: config.billingModel || "separate",
+    combinedFirst12Amount: config.combinedFirst12Amount,
     installmentValue: config.installmentValue,
     setupFee: config.setupFee,
     totalAnnualValue: config.totalAnnualValue,
@@ -404,16 +458,72 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">V. Parcela / Mensalidade (R$)</label>
-                    <input
-                      type="text"
-                      value={installmentInput}
-                      onChange={(e) => handleInstallmentInputChange(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 transition"
-                      placeholder="Ex: 450,00"
-                    />
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">Modelo de Cobrança (Contrato Anual - 12 Meses)</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleBillingModelChange("separate")}
+                        className={`text-left px-3 py-2 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                          (config.billingModel || "separate") === "separate"
+                            ? "bg-[#424733] text-white border-[#424733]"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        Setup + Mensalidade Separados
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBillingModelChange("combined_12")}
+                        className={`text-left px-3 py-2 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                          config.billingModel === "combined_12"
+                            ? "bg-[#424733] text-white border-[#424733]"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        12 Parcelas Combinadas + Mensal (13ª+)
+                      </button>
+                    </div>
                   </div>
+
+                  {config.billingModel === "combined_12" ? (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">12 Primeiras Parcelas (Conf. + Mensal) (R$)</label>
+                        <input
+                          type="text"
+                          value={combinedFirst12Input}
+                          onChange={(e) => handleCombinedFirst12InputChange(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 transition font-bold"
+                          placeholder="Ex: 179,00"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Mensalidade (Da 13ª em Diante) (R$)</label>
+                        <input
+                          type="text"
+                          value={installmentInput}
+                          onChange={(e) => handleInstallmentInputChange(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 transition font-bold"
+                          placeholder="Ex: 99,00"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">V. Parcela / Mensalidade (R$)</label>
+                        <input
+                          type="text"
+                          value={installmentInput}
+                          onChange={(e) => handleInstallmentInputChange(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 transition"
+                          placeholder="Ex: 450,00"
+                        />
+                      </div>
+                    </>
+                  )}
 
                   <div className="space-y-2 sm:col-span-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
                     <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
@@ -500,41 +610,38 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
                     )}
                   </div>
                   
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Setup / Taxa de Configuração (R$)</label>
-                    <input
-                      type="text"
-                      value={setupFeeInput}
-                      onChange={(e) => handleSetupFeeInputChange(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 transition"
-                      placeholder="Ex: 1500,00"
-                    />
-                  </div>
+                  {config.billingModel !== "combined_12" && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Setup / Taxa de Configuração (R$)</label>
+                        <input
+                          type="text"
+                          value={setupFeeInput}
+                          onChange={(e) => handleSetupFeeInputChange(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 transition"
+                          placeholder="Ex: 1500,00"
+                        />
+                      </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Parcelamento do Setup (Até 5x)</label>
-                    <select
-                      value={config.setupInstallments || 1}
-                      onChange={(e) => handleChange("setupInstallments", parseInt(e.target.value))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 font-bold transition cursor-pointer"
-                    >
-                      <option value={1}>
-                        1x à vista {config.setupFee !== "" ? `(R$\u00A0${Number(config.setupFee).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
-                      </option>
-                      <option value={2}>
-                        2x sem juros {config.setupFee !== "" ? `(2x de R$\u00A0${(Number(config.setupFee) / 2).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
-                      </option>
-                      <option value={3}>
-                        3x sem juros {config.setupFee !== "" ? `(3x de R$\u00A0${(Number(config.setupFee) / 3).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
-                      </option>
-                      <option value={4}>
-                        4x sem juros {config.setupFee !== "" ? `(4x de R$\u00A0${(Number(config.setupFee) / 4).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
-                      </option>
-                      <option value={5}>
-                        5x sem juros {config.setupFee !== "" ? `(5x de R$\u00A0${(Number(config.setupFee) / 5).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
-                      </option>
-                    </select>
-                  </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Parcelamento do Setup (Até 10x)</label>
+                        <select
+                          value={config.setupInstallments || 1}
+                          onChange={(e) => handleChange("setupInstallments", parseInt(e.target.value))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#859159] focus:ring-1 focus:ring-[#859159]/30 font-bold transition cursor-pointer"
+                        >
+                          <option value={1}>
+                            1x à vista {config.setupFee !== "" ? `(R$\u00A0${Number(config.setupFee).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
+                          </option>
+                          {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                            <option key={num} value={num}>
+                              {num}x sem juros {config.setupFee !== "" ? `(${num}x de R$\u00A0${(Number(config.setupFee) / num).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
 
                   {/* DATA DE PAGAMENTO DA TAXA DE SETUP / CONFIGURAÇÃO */}
                   <div className="space-y-2 sm:col-span-2 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
@@ -1049,7 +1156,7 @@ export default function ContractConfigurator({ lead, onSave, onClose, isReadOnly
                     {config.clause4Body && (
                       <div className="space-y-1">
                         <h4 className="font-bold text-[#424733] uppercase">{config.clause4Title}</h4>
-                        <p>{config.clause4Body}</p>
+                        <p className="whitespace-pre-line">{config.clause4Body}</p>
                       </div>
                     )}
 

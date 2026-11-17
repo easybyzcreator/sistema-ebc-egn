@@ -1,5 +1,12 @@
 import { Lead, ContractConfig } from "../types";
 
+export const OLD_CLAUSE_4_BODY =
+  "Direito de Arrependimento: Prazo de 7 dias para desistência com reembolso total. Caso o Setup já tenha sido entregue, o valor da taxa de setup não será reembolsado. Pós-7 dias não há reembolso de mensalidades pagas.";
+
+export const NEW_CLAUSE_4_BODY = `4.1. Direito de Arrependimento: O CONTRATANTE possui o prazo de 7 (sete) dias corridos, contados a partir da data da assinatura eletrônica deste contrato, para exercer o direito de desistência com reembolso integral, visto que a CONTRATADA inicia o processo de personalização do aplicativo somente após a assinatura deste contrato e o envio do logotipo e das cores de identidade visual da marca pelo CONTRATANTE. Caso a personalização/Setup já tenha sido iniciada ou entregue após o recebimento desses materiais, o valor referente à taxa de configuração/setup não será reembolsado.
+
+4.2. Vigência Anual e Obrigatoriedade das 12 Parcelas: O presente contrato possui vigência anual (12 meses), obrigando-se o CONTRATANTE ao pagamento integral de todos os valores correspondentes ao período de 1 (um) ano — seja das 12 (doze) primeiras parcelas combinadas (configuração + mensalidade), no modelo unificado, ou da taxa de configuração/setup e das 12 (doze) mensalidades do período, no modelo separado. Transcorrido o prazo de 7 (sete) dias corridos após a assinatura do contrato, não haverá reembolso de parcelas pagas e eventual rescisão antecipada não desobriga o CONTRATANTE da quitação integral do ciclo anual de 12 (doze) meses.`;
+
 export function getDefaultContractConfig(lead: Lead): ContractConfig {
   return {
     contratadaName: "PATRICIA GUIMARÃES",
@@ -16,12 +23,19 @@ export function getDefaultContractConfig(lead: Lead): ContractConfig {
 
     serviceTitle: "Easy Menu EGN",
     frequency: "MENSAL",
+    billingModel: lead.billingModel || "separate",
+    combinedFirst12Amount: lead.combinedFirst12Amount ?? "",
     installmentValue: lead.monthlyFee || "",
     firstMonthlyDueDate: lead.firstMonthlyDueDate || "",
     monthlyDueDateOption: lead.monthlyDueDateOption || (lead.firstMonthlyDueDate ? "custom_date" : "signing_date"),
-    totalAnnualValue: lead.monthlyFee ? lead.monthlyFee * 12 : "",
+    totalAnnualValue:
+      lead.billingModel === "combined_12" && lead.combinedFirst12Amount
+        ? lead.combinedFirst12Amount * 12
+        : lead.monthlyFee
+          ? lead.monthlyFee * 12
+          : "",
     setupFee: lead.configurationFee || "",
-    setupInstallments: lead.setupInstallments || 1,
+    setupInstallments: lead.billingModel === "combined_12" ? 12 : (lead.setupInstallments || 1),
     setupDueDate: lead.setupDueDate || "",
     setupDueDateOption: lead.setupDueDateOption || (lead.setupDueDate ? "custom_date" : "signing_date"),
 
@@ -69,8 +83,8 @@ b) Juros de Mora: Incidência de juros moratórios de 1% ao mês (calculados e a
 
 3.5. Dos Descontos: A CONTRATANTE poderá conceder, a seu exclusivo critério, desconto pontual sobre o valor da parcela para pagamentos realizados antecipadamente à data de vencimento estipulada.`,
 
-    clause4Title: "CLÁUSULA 4 – POLÍTICA DE CANCELAMENTO E REEMBOLSO",
-    clause4Body: "Direito de Arrependimento: Prazo de 7 dias para desistência com reembolso total. Caso o Setup já tenha sido entregue, o valor da taxa de setup não será reembolsado. Pós-7 dias não há reembolso de mensalidades pagas.",
+    clause4Title: "CLÁUSULA 4 – POLÍTICA DE CANCELAMENTO, ARREPENDIMENTO E VIGÊNCIA ANUAL",
+    clause4Body: NEW_CLAUSE_4_BODY,
 
     clause5Title: "CLÁUSULA 5 – DOS PAGAMENTOS VIA PIX / ZELLE / VENMO",
     clause5Body: "O sistema atua como um facilitador visual. A transação financeira via PIX ou outros meios acordados ocorre fora da plataforma (Peer-to-Peer). A CONTRATADA não processa pagamentos e não valida a entrada de valores em conta sem a apresentação do respectivo comprovante.",
@@ -120,6 +134,8 @@ export function formatClause3(
   body: string, 
   config: { 
     frequency: string; 
+    billingModel?: "separate" | "combined_12";
+    combinedFirst12Amount?: number | "";
     totalAnnualValue?: number | ""; 
     installmentValue: number | ""; 
     setupFee: number | ""; 
@@ -130,13 +146,20 @@ export function formatClause3(
   }
 ): string {
   const isMonthly = config.frequency === "MENSAL";
-  const freqText = isMonthly ? "PLANO MENSAL" : "PLANO ANUAL";
+  const isCombined12 = config.billingModel === "combined_12";
+  const freqText = isCombined12
+    ? "PLANO ANUAL COMBINADO (CONFIGURAÇÃO + MENSALIDADE)"
+    : isMonthly
+      ? "PLANO MENSAL (VIGÊNCIA ANUAL)"
+      : "PLANO ANUAL";
   
   const setupNum = config.setupFee !== "" ? Number(config.setupFee) : 0;
   const setupInstNum = config.setupInstallments ? Number(config.setupInstallments) : 1;
 
   let setupVal = "";
-  if (config.setupFee !== "") {
+  if (isCombined12) {
+    setupVal = "diluída nas 12 primeiras parcelas combinadas";
+  } else if (config.setupFee !== "") {
     const formattedSetup = `R$\u00A0${(Math.round(setupNum * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     
     let setupDueText = "no ato da assinatura";
@@ -169,19 +192,35 @@ export function formatClause3(
   const instVal = config.installmentValue !== ""
     ? `R$\u00A0${(Math.round(Number(config.installmentValue) * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "R$\u00A0[A preencher]";
+
+  const combinedNum = config.combinedFirst12Amount !== "" && config.combinedFirst12Amount !== undefined
+    ? Number(config.combinedFirst12Amount)
+    : 0;
+  const combinedVal = config.combinedFirst12Amount !== "" && config.combinedFirst12Amount !== undefined
+    ? `R$\u00A0${(Math.round(combinedNum * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : "R$\u00A0[A preencher]";
   
   let totalVal = "";
   let installmentText = "";
   
-  if (isMonthly) {
+  if (isCombined12) {
+    if (config.combinedFirst12Amount !== "" && config.combinedFirst12Amount !== undefined) {
+      const firstYearTotal = combinedNum * 12;
+      totalVal = `R$\u00A0${(Math.round(firstYearTotal * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/1º ano`;
+      installmentText = `12 (doze) primeiras parcelas mensais de ${combinedVal} (englobando taxa de configuração/setup e mensalidade), passando da 13ª (décima terceira) parcela em diante a pagar exclusivamente o valor mensal de ${instVal} (renovação anual automática)`;
+    } else {
+      totalVal = "R$\u00A0[A preencher]";
+      installmentText = `12 (doze) primeiras parcelas mensais combinadas de ${combinedVal} (configuração + mensalidade), passando da 13ª parcela em diante para ${instVal}/mês`;
+    }
+  } else if (isMonthly) {
     if (config.installmentValue !== "") {
       const instNum = Number(config.installmentValue);
       const totalMonthWithSetup = (instNum * 12) + setupNum;
       totalVal = `R$\u00A0${(Math.round(totalMonthWithSetup * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/ano`;
-      installmentText = `12 parcelas mensais de ${instVal} (renovação anual automática)`;
+      installmentText = `12 parcelas mensais de ${instVal} (contrato de vigência anual com renovação automática)`;
     } else {
       totalVal = "R$\u00A0[A preencher]";
-      installmentText = `parcelas mensais de ${instVal} (renovação anual automática)`;
+      installmentText = `12 parcelas mensais de ${instVal} (contrato de vigência anual com renovação automática)`;
     }
   } else {
     const totalAnnVal = config.totalAnnualValue !== "" && config.totalAnnualValue !== undefined
@@ -216,6 +255,10 @@ export function formatClause3(
       /3\.2\.\s*Do Vencimento da Mensalidade:.*?(?=\n\n3\.3\.|\n\n3\.4\.|\n\nCLÁUSULA|$)/s,
       `3.2. Do Vencimento da Mensalidade: ${dueDateClauseText}`
     );
+  }
+
+  if (isCombined12) {
+    fullBody = fullBody.replace(/\s*\+\s*Taxa de Setup de \{SETUP_VALUE\}/g, "");
   }
 
   return fullBody

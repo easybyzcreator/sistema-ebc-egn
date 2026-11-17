@@ -31,5 +31,12 @@ service cloud.firestore {
     match /contract_templates/{templateId} {
       allow read, write: if true;
     }
+
+    // ==========================================
+    // REGRAS PARA MENSAGENS PADRÃO
+    // ==========================================
+    match /standard_messages/{messageId} {
+      allow read, write: if true;
+    }
   }
 }

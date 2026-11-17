@@ -8,10 +8,12 @@ import Footer from "./components/Footer";
 import UnifiedClientsTab from "./components/UnifiedClientsTab";
 import ClientFinanceTab from "./components/ClientFinanceTab";
 import ClientContractPortal from "./components/ClientContractPortal";
+import StandardMessagesTab from "./components/StandardMessagesTab";
 import LeadModal from "./components/LeadModal";
 import { 
   Users, 
   DollarSign, 
+  MessageSquare,
   Shield, 
   UserCheck, 
   LogOut, 
@@ -68,7 +70,7 @@ export default function App() {
   // App Main State
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"clients" | "finances">("clients");
+  const [activeTab, setActiveTab] = useState<"clients" | "finances" | "messages">("clients");
 
   // Client Modal State
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -197,6 +199,19 @@ export default function App() {
                 <DollarSign size={15} />
                 <span>Finanças & Repasses</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("messages")}
+                className={`flex items-center gap-2 px-3.5 sm:px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
+                  activeTab === "messages"
+                    ? "bg-[#424733] text-white shadow-xs"
+                    : "text-slate-600 hover:text-[#424733] hover:bg-slate-200/60"
+                }`}
+              >
+                <MessageSquare size={15} />
+                <span>Mensagens Padrão</span>
+              </button>
             </nav>
 
             {/* Profile Info & Logout */}
@@ -258,6 +273,12 @@ export default function App() {
             {activeTab === "finances" && (
               <ClientFinanceTab
                 leads={leads}
+                isReadOnly={isReadOnly}
+              />
+            )}
+
+            {activeTab === "messages" && (
+              <StandardMessagesTab
                 isReadOnly={isReadOnly}
               />
             )}

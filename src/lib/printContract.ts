@@ -1,14 +1,31 @@
 import { Lead, ContractConfig } from "../types";
-import { formatClause3 } from "./contractDefaults";
+import { formatClause3, OLD_CLAUSE_4_BODY, NEW_CLAUSE_4_BODY } from "./contractDefaults";
 
 export function printContract(lead: Lead, config: ContractConfig) {
   const isSigned = lead.contractStatus === "signed";
   const contractData = lead.contractData;
   const isMonthly = config.frequency === "MENSAL";
+  const billingModel = lead.billingModel || config.billingModel || "separate";
+  const combinedFirst12 = lead.combinedFirst12Amount ?? config.combinedFirst12Amount;
 
-  const setupVal = config.setupFee !== "" 
-    ? `<span style="white-space: nowrap">R$&nbsp;${(Math.round(Number(config.setupFee) * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+  const effectiveClause4Title =
+    !isSigned && (!config.clause4Body || config.clause4Body.trim() === OLD_CLAUSE_4_BODY)
+      ? "CLÁUSULA 4 – POLÍTICA DE CANCELAMENTO, ARREPENDIMENTO E VIGÊNCIA ANUAL"
+      : config.clause4Title;
+  const effectiveClause4Body =
+    !isSigned && (!config.clause4Body || config.clause4Body.trim() === OLD_CLAUSE_4_BODY)
+      ? NEW_CLAUSE_4_BODY
+      : config.clause4Body;
+
+  const combinedValHtml = combinedFirst12 !== "" && combinedFirst12 !== undefined
+    ? `<span style="white-space: nowrap">12x de R$&nbsp;${(Math.round(Number(combinedFirst12) * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
     : `<span style="white-space: nowrap">R$&nbsp;[A preencher]</span>`;
+
+  const setupVal = billingModel === "combined_12"
+    ? `<span style="white-space: nowrap">Inclusa nas 12 primeiras parcelas</span>`
+    : config.setupFee !== "" 
+      ? `<span style="white-space: nowrap">R$&nbsp;${(Math.round(Number(config.setupFee) * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
+      : `<span style="white-space: nowrap">R$&nbsp;[A preencher]</span>`;
     
   const instVal = config.installmentValue !== ""
     ? `<span style="white-space: nowrap">R$&nbsp;${(Math.round(Number(config.installmentValue) * 100) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`
@@ -21,6 +38,8 @@ export function printContract(lead: Lead, config: ContractConfig) {
   // Format Clause 3
   const formattedClause3 = formatClause3(config.clause3Body || "", {
     frequency: config.frequency,
+    billingModel,
+    combinedFirst12Amount: combinedFirst12,
     installmentValue: config.installmentValue,
     setupFee: config.setupFee,
     totalAnnualValue: config.totalAnnualValue,
@@ -366,9 +385,13 @@ export function printContract(lead: Lead, config: ContractConfig) {
           <h3 class="info-block-title" style="color: #859159;">03. Plano e Valores Contratados</h3>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
             <p><strong>Serviço / Plataforma:</strong> ${config.serviceTitle}</p>
-            <p><strong>Periodicidade:</strong> MENSAL</p>
-            <p><strong>V. Parcela / Mensalidade:</strong> ${instVal}</p>
-            <p><strong>Taxa Setup de Configuração:</strong> ${setupVal}</p>
+            <p><strong>Periodicidade:</strong> MENSAL (CONTRATO ANUAL)</p>
+            ${billingModel === "combined_12"
+              ? `<p><strong>12 Primeiras (Conf. + Mensal):</strong> ${combinedValHtml}</p>
+                 <p><strong>Mensalidade (13ª em diante):</strong> ${instVal}</p>`
+              : `<p><strong>V. Parcela / Mensalidade:</strong> ${instVal}</p>
+                 <p><strong>Taxa Setup de Configuração:</strong> ${setupVal}</p>`
+            }
           </div>
         </div>
 
@@ -397,8 +420,8 @@ export function printContract(lead: Lead, config: ContractConfig) {
         </div>
 
         <div class="clause-section">
-          <div class="clause-title">${config.clause4Title}</div>
-          <p class="clause-body">${config.clause4Body}</p>
+          <div class="clause-title">${effectiveClause4Title}</div>
+          <p class="clause-body">${effectiveClause4Body}</p>
         </div>
 
         <div class="clause-section">

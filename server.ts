@@ -866,10 +866,15 @@ function classifyAsaasPayment(
   const paymentLink = (p.paymentLink || "").toLowerCase();
   const invoiceUrl = (p.invoiceUrl || "").toLowerCase();
 
+  const isCombined12 = leadData.billingModel === "combined_12";
   const cfgFee = Number(leadData.configurationFee || 0);
   const monFee = Number(leadData.monthlyFee || 0);
-  const cfgInstCount = Number(leadData.setupInstallments || leadData.contractConfig?.setupInstallments || (cfgFee > 0 ? 3 : 1));
-  const expectedInstVal = cfgInstCount > 0 ? Math.round((cfgFee / cfgInstCount) * 100) / 100 : cfgFee;
+  const cfgInstCount = isCombined12
+    ? 12
+    : Number(leadData.setupInstallments || leadData.contractConfig?.setupInstallments || (cfgFee > 0 ? 3 : 1));
+  const expectedInstVal = isCombined12 && Number(leadData.combinedFirst12Amount || 0) > 0
+    ? Number(leadData.combinedFirst12Amount)
+    : (cfgInstCount > 0 ? Math.round((cfgFee / cfgInstCount) * 100) / 100 : cfgFee);
 
   let isSetup = false;
   let isMonthly = false;
@@ -1025,10 +1030,15 @@ async function syncLeadWithAsaas(leadId: string, leadDataOverride?: any, customK
   let foundAny = false;
   let foundDetails: string[] = [];
 
+  const isCombined12 = leadData.billingModel === "combined_12";
   const cfgFee = Number(leadData.configurationFee || 0);
   const monFee = Number(leadData.monthlyFee || 0);
-  const totalSetupInst = Number(leadData.setupInstallments || (leadData.contractConfig?.setupInstallments) || (cfgFee > 0 ? 3 : 1));
-  const expectedInstVal = totalSetupInst > 0 ? Math.round((cfgFee / totalSetupInst) * 100) / 100 : cfgFee;
+  const totalSetupInst = isCombined12
+    ? 12
+    : Number(leadData.setupInstallments || (leadData.contractConfig?.setupInstallments) || (cfgFee > 0 ? 3 : 1));
+  const expectedInstVal = isCombined12 && Number(leadData.combinedFirst12Amount || 0) > 0
+    ? Number(leadData.combinedFirst12Amount)
+    : (totalSetupInst > 0 ? Math.round((cfgFee / totalSetupInst) * 100) / 100 : cfgFee);
 
   const rawPaymentsFromAsaas: any[] = [];
 
@@ -1427,8 +1437,11 @@ async function syncLeadWithAsaas(leadId: string, leadDataOverride?: any, customK
       monthlyPaid = true;
     }
 
+    // Para clientes no modelo combinado (12 primeiras juntas), só gera cobrança mensal separada após as 12 primeiras OU se houver link/pagamento mensal explícito
+    const shouldCheckSeparateMonthly = !isCombined12 || setupPaidCount >= 12 || Boolean(mLink) || paidMonthlies.length > 0;
+
     // Se não há mensalidades do Asaas verificadas para este cliente, preservar apenas parcelas manuais sem IDs de outros clientes
-    if (newMonthlyPayments.length === 0) {
+    if (newMonthlyPayments.length === 0 && shouldCheckSeparateMonthly) {
       const manualMonthlies = (leadData.payments || []).filter((p: any) => p.type === "monthly" && !p.asaasPaymentId && !String(p.id || "").startsWith("pay_"));
       if (manualMonthlies.length > 0) {
         newMonthlyPayments.push(...manualMonthlies);
@@ -1455,7 +1468,7 @@ async function syncLeadWithAsaas(leadId: string, leadDataOverride?: any, customK
       return false;
     });
 
-    if (!hasCurrentMonthInAsaas && monFee > 0) {
+    if (shouldCheckSeparateMonthly && !hasCurrentMonthInAsaas && monFee > 0) {
       const manualCurrentMonth = (leadData.payments || []).find((p: any) => 
         p.type === "monthly" && (p.monthReference === currentMonthYear || (p.dueDate && p.dueDate.startsWith(currentMonthYear.split("/")[1] + "-" + currentMonthYear.split("/")[0])))
       );
